@@ -197,43 +197,66 @@ def add_dicom_folder(staging: Path, selected_name: str) -> tuple[list[str], list
     return added, warnings
 
 
-def index_kind(path: Path) -> str | None:
+def read_index(path: Path) -> tuple[str | None, dict]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return None
-    return "fraction" if data.get("ct") else "legacy" if "images" in data else None
+        return None, {}
+    kind = ("fraction" if data.get("ct") else "legacy" if "images" in data
+            else "collection" if data.get("patient_id") and "packages" in data else None)
+    return kind, data
+
+
+def fraction_patient_id(package: Path, index: dict, staging: Path,
+                        selected_name: str) -> str:
+    for parent in package.parents:
+        if parent == staging:
+            break
+        kind, data = read_index(parent / "index.json")
+        if kind == "collection" and data.get("patient_id"):
+            return safe_name(data["patient_id"], "unknown_patient")
+
+    source_package = index.get("source_package")
+    if source_package:
+        source_patient = Path(str(source_package)).parent.name
+        if source_patient:
+            return safe_name(source_patient, "unknown_patient")
+
+    if package.parent != staging and package.parent.name != selected_name:
+        return safe_name(package.parent.name, "unknown_patient")
+    if not re.fullmatch(r"(?:plan_ct\d+|fraction_(?:fbct|cbct|ct)\d+)", selected_name,
+                        flags=re.IGNORECASE):
+        return safe_name(selected_name, "unknown_patient")
+    return "unknown_patient"
 
 
 def add_nifti_folder(staging: Path, selected_name: str) -> tuple[list[str], list[str]]:
     before = set(nifti_backend.catalog(SESSION_NIFTI))
     found = []
     for index_path in sorted(staging.rglob("index.json")):
-        kind = index_kind(index_path)
-        if kind:
-            found.append((kind, index_path.parent))
+        kind, data = read_index(index_path)
+        if kind in ("fraction", "legacy"):
+            found.append((kind, index_path.parent, data))
     if not found:
         raise ValueError("未找到可用的 NIfTI index.json；请添加转换后的病例目录")
 
     installed_sources = set()
-    for kind, package in found:
+    for kind, package, index in found:
         resolved = package.resolve()
         if resolved in installed_sources:
             continue
         installed_sources.add(resolved)
         if kind == "fraction":
-            parent = package.parent
-            patient = selected_name if parent == staging else parent.name
+            patient = fraction_patient_id(package, index, staging, selected_name)
             destination = SESSION_NIFTI / safe_name(patient) / safe_name(package.name)
         else:
             destination = SESSION_NIFTI / safe_name(package.name)
         installed = install_symlink(package, destination)
         installed_case = (f"{installed.parent.name}/{installed.name}"
                           if kind == "fraction" else installed.name)
-        folder_name = package.parent.name if kind == "fraction" else package.name
         CASE_META[("nifti", installed_case)] = {
-            "patient_id": installed.parent.name if kind == "fraction" else installed.name,
-            "source_folder": safe_name(folder_name, selected_name),
+            "patient_id": patient if kind == "fraction" else installed.name,
+            "source_folder": selected_name,
             "source_path": "",
         }
 

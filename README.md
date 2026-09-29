@@ -26,6 +26,7 @@ DICOM 导出
 | `verify_nifti_conversion.py` | 独立读回转换结果，检查几何、数值、关系和校验和。 |
 | `server_new.py` | 本地只读 Viewer，支持 DICOM、NIfTI、快速查看和临时病例库。 |
 | `run_viewer_new.sh` | Linux 下启动新版 Viewer。 |
+| `run_viewer_new_demo.bat` | Windows 启动示例；用户需填写本机 `python.exe` 路径。 |
 
 `viewer/` 保存 Viewer 后端与静态页面，`tests/` 使用合成 DICOM/NIfTI 数据测试，不依赖真实病例。
 
@@ -142,6 +143,22 @@ Viewer 支持三切面、结构轮廓、剂量色洗、等剂量线、DVH 和 DI
 ```
 
 路径不会作为默认值写在 Python 程序中；未传入的类型保持空列表。
+
+### Windows 启动
+
+先打开 `run_viewer_new_demo.bat`，将文件顶部的 `PYTHON_EXE` 改成实际的 `python.exe` 路径，例如：
+
+```bat
+set "PYTHON_EXE=C:\path\to\rtdcmtools\.venv\Scripts\python.exe"
+```
+
+保存后双击 BAT 文件，或在命令提示符中执行：
+
+```bat
+run_viewer_new_demo.bat
+```
+
+BAT 使用自身所在目录定位 `server_new.py`，因此不要求仓库位于固定盘符或固定文件夹。
 
 ## NIfTI 输出约定
 
