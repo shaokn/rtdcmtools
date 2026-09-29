@@ -1,0 +1,8 @@
+Flask>=3.0,<4
+numpy>=1.26
+pydicom>=2.4,<4
+SimpleITK>=2.3
+Pillow>=10
+scipy>=1.11
+rt-utils
+nibabel>=5.2

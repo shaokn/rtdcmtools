@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.log
+.pytest_cache/
+data/
+qa/
+viewer/qa/
+*.nii
+*.nii.gz
+*.dcm
+*.mha
+*.h5
+*.tfm
+.venv/
+.pyauto/
+.DS_Store

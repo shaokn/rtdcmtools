@@ -1,0 +1,30 @@
+:root { scrollbar-gutter: stable; }
+.source-switch { display: grid; grid-template-columns: 1fr 1fr; margin: 0 0 12px; gap: 0; }
+.source-switch button { border-radius: 0; min-width: 0; }
+.source-switch button[aria-pressed="true"] { background: #0d756c; color: white; }
+.roi.clipped span { color: #a8521c; }
+.source-switch button:last-child { grid-column: 1 / -1; }
+#quickForm { padding: 16px 0; border-bottom: 1px solid #dce5e2; }
+.quick-files { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)) minmax(100px,.5fr); gap: 12px; }
+.quick-files label { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.quick-files input { width: 100%; min-width: 0; font-size: 12px; padding: 6px; }
+.quick-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.quick-actions .check { flex: 1 1 300px; }
+#quickStatus { font-size: 12px; color: #64786d; }
+h1 { overflow-wrap: anywhere; }
+body.quick .controls { grid-template-columns: repeat(3,minmax(0,1fr)); }
+@media (max-width: 850px) {
+  .quick-files { grid-template-columns: minmax(0,1fr); }
+  body.quick .controls { grid-template-columns: minmax(0,1fr); }
+}
+.dosebar select { width: 150px; }
+@media (min-width: 1251px) {
+  .mpr {
+    height: clamp(470px, calc(100vh - 410px), 780px);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+  .viewport .imagebox, .viewport:first-child .imagebox {
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+}
