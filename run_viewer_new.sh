@@ -16,18 +16,22 @@ if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
     exit 1
 fi
 
-[[ -d "$PACKAGE_ROOT/../organized_dicom" ]] && DEFAULT_DICOM="$PACKAGE_ROOT/../organized_dicom" || DEFAULT_DICOM="$PACKAGE_ROOT/data/organized_dicom"
-[[ -d "$PACKAGE_ROOT/../nifti_fractions" ]] && DEFAULT_NIFTI="$PACKAGE_ROOT/../nifti_fractions" || DEFAULT_NIFTI="$PACKAGE_ROOT/data/nifti_fractions"
-
 PORT="${1:-8768}"
-DICOM_ROOT="${2:-$DEFAULT_DICOM}"
-NIFTI_ROOT="${3:-$DEFAULT_NIFTI}"
+ARGS=(--port "$PORT" --default-source dicom)
+if [[ -n "${2:-}" ]]; then
+    ARGS+=(--data-root "$2")
+fi
+if [[ -n "${3:-}" ]]; then
+    ARGS+=(--nifti-root "$3")
+fi
 
-printf 'New viewer URL: http://127.0.0.1:%s/?source=nifti\n' "$PORT"
-printf 'Initial DICOM root: %s\n' "$DICOM_ROOT"
-printf 'Initial NIfTI root: %s\n' "$NIFTI_ROOT"
+printf 'New viewer URL: http://127.0.0.1:%s/?source=dicom\n' "$PORT"
+if [[ -z "${2:-}${3:-}" ]]; then
+    printf 'Case library starts empty. Use + in the browser to add folders.\n'
+else
+    [[ -n "${2:-}" ]] && printf 'Initial DICOM root: %s\n' "$2"
+    [[ -n "${3:-}" ]] && printf 'Initial NIfTI root: %s\n' "$3"
+fi
 printf 'Added folders are temporary for this server session. Ctrl+C stops the server.\n\n'
 
-exec "$PYTHON_BIN" -u "$PACKAGE_ROOT/server_new.py" \
-    --port "$PORT" --data-root "$DICOM_ROOT" --nifti-root "$NIFTI_ROOT" \
-    --default-source nifti
+exec "$PYTHON_BIN" -u "$PACKAGE_ROOT/server_new.py" "${ARGS[@]}"

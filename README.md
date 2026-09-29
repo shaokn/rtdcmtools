@@ -113,10 +113,10 @@ CT/FBCT 类型由文件名和直接父目录提示识别；RS、RP、RD、REG �
 
 ## 本地 Viewer
 
-直接指定端口、DICOM 根目录和 NIfTI 根目录：
+默认以空病例库启动，DICOM 和 NIfTI 均不预加载任何目录：
 
 ```bash
-./run_viewer_new.sh 8768 /path/to/organized_dicom /path/to/nifti_fractions
+./run_viewer_new.sh 8768
 ```
 
 打开：
@@ -134,6 +134,14 @@ Viewer 支持三切面、结构轮廓、剂量色洗、等剂量线、DVH 和 DI
 - 病例右上角 `x` 只从当前列表移除，不删除源目录。
 
 大型数据更适合在启动命令中直接传入根目录，以避免浏览器临时复制。按 `Ctrl+C` 停止服务。
+
+确实需要预加载时，可显式传入 DICOM 和 NIfTI 根目录：
+
+```bash
+./run_viewer_new.sh 8768 /path/to/organized_dicom /path/to/nifti_fractions
+```
+
+路径不会作为默认值写在 Python 程序中；未传入的类型保持空列表。
 
 ## NIfTI 输出约定
 

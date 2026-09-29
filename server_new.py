@@ -318,9 +318,12 @@ def new_home():
 core.app.view_functions["home"] = new_home
 
 
-def configure(dicom_root: Path, nifti_root: Path, default_source: str):
-    add_initial_dicom(dicom_root.resolve())
-    add_initial_nifti(nifti_root.resolve())
+def configure(dicom_root: Path | None = None, nifti_root: Path | None = None,
+              default_source: str = "dicom"):
+    if dicom_root is not None:
+        add_initial_dicom(dicom_root.resolve())
+    if nifti_root is not None:
+        add_initial_nifti(nifti_root.resolve())
     core.ROOT = SESSION_DICOM
     core.NIFTI_ROOT = SESSION_NIFTI
     core.app.config["DEFAULT_SOURCE"] = default_source
@@ -328,9 +331,11 @@ def configure(dicom_root: Path, nifti_root: Path, default_source: str):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-root", type=Path, default=core.OUTPUT_ROOT / "organized_dicom")
-    parser.add_argument("--nifti-root", type=Path, default=core.OUTPUT_ROOT / "nifti_fractions")
-    parser.add_argument("--default-source", choices=("dicom", "nifti"), default="nifti")
+    parser.add_argument("--data-root", type=Path,
+                        help="Optional organized DICOM root to preload")
+    parser.add_argument("--nifti-root", type=Path,
+                        help="Optional converted NIfTI root to preload")
+    parser.add_argument("--default-source", choices=("dicom", "nifti"), default="dicom")
     parser.add_argument("--port", type=int, default=8768)
     args = parser.parse_args()
     configure(args.data_root, args.nifti_root, args.default_source)
