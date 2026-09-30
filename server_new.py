@@ -348,20 +348,22 @@ def library_meta():
 # render whatever columns the current protocol asks for.
 #
 # Supported tokens (case-insensitive, separated by comma, semicolon or space):
-#   D95       dose to 95% of the volume
-#   D2cc      lowest dose inside the hottest 2 cc
-#   V20Gy     percentage of the volume receiving at least 20 Gy
+#   D95%        dose to 95% of the volume; the % qualifies the volume, so no
+#               prescription dose is involved. This is the canonical spelling
+#               and the bare D95 form is refused with a pointer to it.
+#   D2cc        lowest dose inside the hottest 2 cc (same idea, absolute volume)
+#   V20Gy       percentage of the volume receiving at least 20 Gy
 #   Dmean, Dmax, Dmin, volume
 #
-# Relative-dose forms (D95%, V107%) need a prescription dose, which the current
-# pipeline does not carry, so they are rejected with an explicit message rather
-# than silently resolved against the maximum dose.
+# V_x% is a different quantity: "volume receiving at least x% of the
+# prescription". It needs a prescription dose, which this tool does not carry
+# and is not meant to support, so it is refused with an explicit message.
 
 MAX_METRICS = 12
-DEFAULT_METRICS = "Dmean,D95,D2,V20Gy"
+DEFAULT_METRICS = "Dmean,D95%,D2%,V20Gy"
 _METRIC_TOKEN = re.compile(r"^[A-Za-z0-9.%]+$")
-_RELATIVE_HINT = ("相对剂量型需要处方剂量，当前链路未提供；"
-                  "请改用绝对剂量型，如 D95、D2cc、V20Gy、Dmax")
+_RELATIVE_HINT = ("V_x% 是相对处方剂量的指标（接受 ≥ x% 处方剂量的体积），"
+                  "需要处方剂量，本工具不提供；请改用绝对剂量阈值，如 V20Gy")
 
 # (key, kind, parameter, label, unit)
 Metric = tuple[str, str, float | None, str, str]
@@ -371,7 +373,7 @@ def parse_metric(token: str) -> Metric:
     if len(token) > 24 or not _METRIC_TOKEN.match(token):
         raise ValueError(f"无法识别的指标 “{token}”")
     upper = token.upper()
-    if re.fullmatch(r"[DV]\d+(?:\.\d+)?%", upper):
+    if re.fullmatch(r"V\d+(?:\.\d+)?%", upper):
         raise ValueError(f"“{token}”：{_RELATIVE_HINT}")
     if upper in ("MEAN", "DMEAN"):
         return "Dmean", "mean", None, "Dmean", "Gy"
@@ -382,20 +384,29 @@ def parse_metric(token: str) -> Metric:
     if upper in ("VOL", "VOLUME", "VCC"):
         return "Volume", "volume", None, "体积", "cm³"
 
-    percent = re.fullmatch(r"D(\d+(?:\.\d+)?)(CC)?", upper)
-    if percent:
-        value = float(percent.group(1))
+    share = re.fullmatch(r"D(\d+(?:\.\d+)?)(CC|%)", upper)
+    if share:
+        value = float(share.group(1))
         if not 0 < value < 100:
-            raise ValueError(f"“{token}”：D 的百分比必须在 0 到 100 之间（不含端点）")
-        if percent.group(2):
-            return f"D{percent.group(1)}cc", "dxcc", value, f"D{percent.group(1)}cc", "Gy"
-        return f"D{percent.group(1)}", "dx", value, f"D{percent.group(1)}", "Gy"
+            raise ValueError(f"“{token}”：D 的体积百分比必须在 0 到 100 之间（不含端点）")
+        if share.group(2) == "CC":
+            return f"D{share.group(1)}cc", "dxcc", value, f"D{share.group(1)}cc", "Gy"
+        # ``D95%`` is the canonical spelling of "dose to 95% of the volume". Both
+        # branches share the ``dx`` estimator that the built-in D95 / D2 columns
+        # use, so the number is unchanged from the fixed table.
+        return f"D{share.group(1)}", "dx", value, f"D{share.group(1)}%", "Gy"
+
+    bare = re.fullmatch(r"D(\d+(?:\.\d+)?)", upper)
+    if bare:
+        raise ValueError(f"“{token}”：请写成规范形式 D{bare.group(1)}%"
+                         "（% 修饰的是体积，表示该比例体积接受的剂量）")
 
     level = re.fullmatch(r"V(\d+(?:\.\d+)?)(?:GY)?", upper)
     if level:
         return f"V{level.group(1)}Gy", "vx", float(level.group(1)), f"V{level.group(1)}Gy", "%"
 
-    raise ValueError(f"无法识别的指标 “{token}”；支持 D_x、D_xcc、V_xGy、Dmean、Dmax、Dmin、volume")
+    raise ValueError(f"无法识别的指标 “{token}”；支持 D_x%（如 D95%）、D_xcc、V_xGy、"
+                     "Dmean、Dmax、Dmin、volume")
 
 
 def parse_metrics(spec: str) -> list[Metric]:

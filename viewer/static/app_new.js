@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);
-const state={source:'dicom',quickToken:'',cases:[],info:null,case:'',meta:null,selected:new Set(),position:[0,0,0],version:0,dvh:null,doseMax:0,metricSpec:'Dmean,D95,D2,V20Gy'};
+const state={source:'dicom',quickToken:'',cases:[],info:null,case:'',meta:null,selected:new Set(),position:[0,0,0],version:0,dvh:null,doseMax:0,metricSpec:'Dmean,D95%,D2%,V20Gy'};
 const axes={axial:2,coronal:1,sagittal:0};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rgb=c=>`rgb(${c.join(',')})`;

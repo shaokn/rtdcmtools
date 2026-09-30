@@ -18,29 +18,46 @@ class ParseMetricTests(unittest.TestCase):
                          ['Dmean', 'D95', 'D2', 'V20Gy'])
 
     def test_supported_tokens(self):
-        metrics = server_new.parse_metrics('d98, D2cc, v20, Dmax, dmean, min, VOL')
+        metrics = server_new.parse_metrics('d98%, D2cc, v20, Dmax, dmean, min, VOL')
         self.assertEqual([m[0] for m in metrics],
                          ['D98', 'D2cc', 'V20Gy', 'Dmax', 'Dmean', 'Dmin', 'Volume'])
         self.assertEqual([m[1] for m in metrics],
                          ['dx', 'dxcc', 'vx', 'max', 'mean', 'min', 'volume'])
 
     def test_duplicate_tokens_collapse(self):
-        self.assertEqual([m[0] for m in server_new.parse_metrics('D95, d95, D95')], ['D95'])
+        self.assertEqual([m[0] for m in server_new.parse_metrics('D95%, d95%, D95%')], ['D95'])
 
     def test_relative_tokens_explain_what_is_missing(self):
-        for token in ('V107%', 'D95%'):
+        with self.assertRaises(ValueError) as caught:
+            server_new.parse_metric('V107%')
+        self.assertIn('处方剂量', str(caught.exception))
+
+    def test_dx_percent_spelling_is_the_dose_to_that_volume(self):
+        # ``D95%`` spells the volume share, not a share of the prescription, so
+        # it needs no reference dose.
+        percent = server_new.parse_metric('D95%')
+        self.assertEqual(percent[0], 'D95')
+        self.assertEqual(percent[1:3], ('dx', 95.0))
+        self.assertEqual((percent[3], percent[4]), ('D95%', 'Gy'))
+        self.assertEqual([m[0] for m in server_new.parse_metrics('D98%, d2%, D2cc')],
+                         ['D98', 'D2', 'D2cc'])
+        self.assertEqual(server_new.parse_metric('D2%'), server_new.parse_metric('d2%'))
+
+    def test_bare_dx_is_refused_with_the_canonical_spelling(self):
+        for token in ('D95', 'd2', 'D50'):
             with self.assertRaises(ValueError) as caught:
                 server_new.parse_metric(token)
-            self.assertIn('处方剂量', str(caught.exception))
+            self.assertIn(f'{token.upper()}%', str(caught.exception))
 
     def test_invalid_tokens_are_rejected(self):
-        for token in ('D0', 'D100', 'V-1', 'D95Gy', 'D95ccGy', 'foobar', 'D1e3'):
+        for token in ('D0', 'D100', 'D0%', 'D100%', 'V-1', 'D95Gy', 'D95ccGy',
+                      'D95%%', 'foobar', 'D1e3'):
             with self.assertRaises(ValueError, msg=token):
                 server_new.parse_metric(token)
 
     def test_metric_count_is_capped(self):
         with self.assertRaises(ValueError):
-            server_new.parse_metrics(','.join(f'D{i}' for i in range(1, 14)))
+            server_new.parse_metrics(','.join(f'D{i}%' for i in range(1, 14)))
 
 
 class EvaluateMetricTests(unittest.TestCase):
@@ -110,7 +127,7 @@ class DvhRouteTests(unittest.TestCase):
             return self.client.get('/api/dvh', query_string=params)
 
     def test_requested_columns_and_values(self):
-        payload = self.request(metrics='D50,D1cc,V5Gy,Dmax,volume').json
+        payload = self.request(metrics='D50%,D1cc,V5Gy,Dmax,volume').json
         self.assertEqual([m['key'] for m in payload['metrics']],
                          ['D50', 'D1cc', 'V5Gy', 'Dmax', 'Volume'])
         row = payload['structures'][0]
@@ -125,6 +142,22 @@ class DvhRouteTests(unittest.TestCase):
         self.assertAlmostEqual(row['values']['D1cc'], float(values.min()), places=6)
         self.assertTrue(row['notes'])
 
+    def test_percent_spelling_returns_the_same_number(self):
+        payload = self.request(metrics='D95%').json
+        self.assertEqual([m['key'] for m in payload['metrics']], ['D95'])
+        self.assertEqual([m['label'] for m in payload['metrics']], ['D95%'])
+        row = payload['structures'][0]
+        # The canonical % form must land on the built-in D95 estimator, not on
+        # anything that would need a prescription dose.
+        self.assertAlmostEqual(row['values']['D95'],
+                               float(np.percentile(self.dose[self.mask], 5)), places=6)
+        self.assertAlmostEqual(row['values']['D95'], row['d95'], places=6)
+
+    def test_bare_dx_is_a_readable_400(self):
+        response = self.request(metrics='D95')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('D95%', response.json['error'])
+
     def test_legacy_keys_survive_for_the_old_front_end(self):
         row = self.request().json['structures'][0]
         for key in ('mean', 'd95', 'd2', 'v20', 'curve', 'coverage'):
@@ -138,11 +171,20 @@ class DvhRouteTests(unittest.TestCase):
         self.assertIn('处方剂量', response.json['error'])
 
     def test_csv_export_follows_the_requested_columns(self):
-        response = self.request(metrics='D98,D2cc', format='csv')
+        response = self.request(metrics='D98%,D2cc', format='csv')
         self.assertEqual(response.status_code, 200)
         lines = response.get_data(as_text=True).lstrip('\ufeff').strip().splitlines()
-        self.assertEqual(lines[0], 'ROI,volume_cc,coverage,D98_Gy,D2cc_Gy,note')
+        self.assertEqual(lines[0], 'ROI,volume_cc,coverage,D98%_Gy,D2cc_Gy,note')
         self.assertEqual(len(lines), 2)
+
+    def test_legacy_default_spec_still_matches_the_fixed_columns(self):
+        payload = self.request().json
+        self.assertEqual([m['label'] for m in payload['metrics']],
+                         ['Dmean', 'D95%', 'D2%', 'V20Gy'])
+        row = payload['structures'][0]
+        self.assertAlmostEqual(row['values']['D95'], row['d95'], places=6)
+        self.assertAlmostEqual(row['values']['D2'], row['d2'], places=6)
+        self.assertAlmostEqual(row['values']['V20Gy'], row['v20'], places=6)
 
 
 if __name__ == '__main__':
