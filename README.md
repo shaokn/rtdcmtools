@@ -28,7 +28,7 @@ DICOM 导出
 | `run_viewer_new.sh` | Linux 下启动新版 Viewer。 |
 | `run_viewer_new_demo.bat` | Windows 启动示例；用户需填写本机 `python.exe` 路径。 |
 
-`viewer/` 保存 Viewer 后端与静态页面，`tests/` 使用合成 DICOM/NIfTI 数据测试，不依赖真实病例。
+`viewer/` 保存 Viewer 后端与静态页面；`tests/` 中除两个跨数据源一致性用例需要本机病例数据外，其余使用合成 DICOM/NIfTI 数据测试（见「测试」一节）。
 
 ## 安装
 
@@ -160,6 +160,27 @@ run_viewer_new_demo.bat
 
 BAT 使用自身所在目录定位 `server_new.py`，因此不要求仓库位于固定盘符或固定文件夹。
 
+### 自定义 DVH 指标
+
+DVH 页签的「自定义指标」输入框接受绝对剂量型指标，用逗号、分号或空格分隔，最多 12 项：
+
+| 写法 | 含义 |
+| --- | --- |
+| `D95` | 95% 体积接受的剂量 |
+| `D2cc` | 最热 2 cc 体积内的最低剂量 |
+| `V20Gy` | 接受 ≥20 Gy 的体积百分比（写成 `V20` 等价） |
+| `Dmean` `Dmax` `Dmin` | 平均 / 最大 / 最小剂量 |
+| `volume` | 结构体积 cm³ |
+
+留空即使用默认的 `Dmean,D95,D2,V20Gy`，取值与升级前的固定列逐位一致——`D_x` 与内置列共用同一个分位估计（线性插值），不会出现输入框敲 `D95` 与表内 `D95` 不同的情况。导出 CSV 的列跟随输入框。
+
+两点口径说明：
+
+- `D_xcc` 是「最热 x cc 体积内的**最低**剂量」。当 x cc 小于单个体素时退化为最热体素剂量；当 x cc 超过结构体积时结果等于 `Dmin`。两种情况都会在该行给出提示。
+- 相对剂量型（`D95%`、`V107%`）需要处方剂量，当前链路没有携带，会直接返回 400 并说明原因，**不会**回退成按最大剂量解释。
+
+该功能由 `server_new.py` 覆盖核心 `/api/dvh` 实现，`viewer/server.py` 与旧版 `run_viewer.sh` 的固定四列保持不变。
+
 ## NIfTI 输出约定
 
 - **CT**：逐层应用 `RescaleSlope/RescaleIntercept`，输出 `float32` HU。
@@ -195,7 +216,9 @@ PYTHONPATH="$PWD:$PWD/viewer" .venv/bin/python -m unittest discover \
   -s tests -p 'test_*.py' -v
 ```
 
-测试覆盖 CT 排序与 HU、NIfTI 坐标、剂量缩放、轮廓栅格化保护、Viewer API、快速查看和等剂量显示。测试通过不等同于临床验证；仍需针对设备和 TPS 导出格式验证体积、DVH、剂量和空间位置。
+测试覆盖 CT 排序与 HU、NIfTI 坐标、剂量缩放、轮廓栅格化保护、Viewer API、快速查看、等剂量显示和自定义 DVH 指标。测试通过不等同于临床验证；仍需针对设备和 TPS 导出格式验证体积、DVH、剂量和空间位置。
+
+⚠️ 其中 `test_server.py::test_all_five_cases_and_roi_projection` 与 `test_nifti_viewer.py::test_all_cases` 要求仓库同级目录下已存在本机的 `organized_dicom`（5 例）与 `nifti_data`，并且会写回 `viewer/qa/data_checks.json`；在没有这些数据的机器上这两个用例会失败，其余用例（含 `test_dvh_metrics.py`）不依赖真实病例。
 
 ## 已知限制
 

@@ -3,12 +3,18 @@
 The original server.py is intentionally unchanged. Browser-selected folders are
 copied into a temporary session workspace. Closing a case only removes its
 session link; source data is never deleted.
+
+This module also overrides ``/api/dvh`` with an absolute-dose metric spec so
+research protocols can request their own indicators without editing the core
+viewer.
 """
 from __future__ import annotations
 
 import argparse
 import atexit
 from collections import defaultdict
+import csv
+import io
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -21,7 +27,8 @@ HERE = Path(__file__).resolve().parent
 VIEWER = HERE / "viewer"
 sys.path.insert(0, str(VIEWER))
 
-from flask import jsonify, request, send_from_directory
+from flask import jsonify, request, Response, send_from_directory
+import numpy as np
 import pydicom
 
 import nifti_backend
@@ -332,6 +339,171 @@ def library_meta():
     return jsonify(patient_id=patient_id, source_folder=source_folder,
                    source_path=meta.get("source_path", ""),
                    list_item=case.rsplit("/", 1)[-1])
+
+
+# --- DVH metrics -----------------------------------------------------------
+#
+# The core viewer exposes a fixed Dmean / D95 / D2 / V20 table. This override
+# keeps that response shape and adds a metric spec on top, so the front end can
+# render whatever columns the current protocol asks for.
+#
+# Supported tokens (case-insensitive, separated by comma, semicolon or space):
+#   D95       dose to 95% of the volume
+#   D2cc      lowest dose inside the hottest 2 cc
+#   V20Gy     percentage of the volume receiving at least 20 Gy
+#   Dmean, Dmax, Dmin, volume
+#
+# Relative-dose forms (D95%, V107%) need a prescription dose, which the current
+# pipeline does not carry, so they are rejected with an explicit message rather
+# than silently resolved against the maximum dose.
+
+MAX_METRICS = 12
+DEFAULT_METRICS = "Dmean,D95,D2,V20Gy"
+_METRIC_TOKEN = re.compile(r"^[A-Za-z0-9.%]+$")
+_RELATIVE_HINT = ("相对剂量型需要处方剂量，当前链路未提供；"
+                  "请改用绝对剂量型，如 D95、D2cc、V20Gy、Dmax")
+
+# (key, kind, parameter, label, unit)
+Metric = tuple[str, str, float | None, str, str]
+
+
+def parse_metric(token: str) -> Metric:
+    if len(token) > 24 or not _METRIC_TOKEN.match(token):
+        raise ValueError(f"无法识别的指标 “{token}”")
+    upper = token.upper()
+    if re.fullmatch(r"[DV]\d+(?:\.\d+)?%", upper):
+        raise ValueError(f"“{token}”：{_RELATIVE_HINT}")
+    if upper in ("MEAN", "DMEAN"):
+        return "Dmean", "mean", None, "Dmean", "Gy"
+    if upper in ("MAX", "DMAX"):
+        return "Dmax", "max", None, "Dmax", "Gy"
+    if upper in ("MIN", "DMIN"):
+        return "Dmin", "min", None, "Dmin", "Gy"
+    if upper in ("VOL", "VOLUME", "VCC"):
+        return "Volume", "volume", None, "体积", "cm³"
+
+    percent = re.fullmatch(r"D(\d+(?:\.\d+)?)(CC)?", upper)
+    if percent:
+        value = float(percent.group(1))
+        if not 0 < value < 100:
+            raise ValueError(f"“{token}”：D 的百分比必须在 0 到 100 之间（不含端点）")
+        if percent.group(2):
+            return f"D{percent.group(1)}cc", "dxcc", value, f"D{percent.group(1)}cc", "Gy"
+        return f"D{percent.group(1)}", "dx", value, f"D{percent.group(1)}", "Gy"
+
+    level = re.fullmatch(r"V(\d+(?:\.\d+)?)(?:GY)?", upper)
+    if level:
+        return f"V{level.group(1)}Gy", "vx", float(level.group(1)), f"V{level.group(1)}Gy", "%"
+
+    raise ValueError(f"无法识别的指标 “{token}”；支持 D_x、D_xcc、V_xGy、Dmean、Dmax、Dmin、volume")
+
+
+def parse_metrics(spec: str) -> list[Metric]:
+    tokens = [token for token in re.split(r"[,;\s]+", (spec or "").strip()) if token]
+    if not tokens:
+        tokens = DEFAULT_METRICS.split(",")
+    if len(tokens) > MAX_METRICS:
+        raise ValueError(f"自定义指标最多 {MAX_METRICS} 项，当前 {len(tokens)} 项")
+    metrics, seen = [], set()
+    for token in tokens:
+        metric = parse_metric(token)
+        if metric[0] not in seen:
+            seen.add(metric[0])
+            metrics.append(metric)
+    return metrics
+
+
+def evaluate_metric(kind: str, parameter: float | None, values, voxel_cc: float) -> float:
+    """Evaluate one metric. ``values`` must be ascending (sorted in place)."""
+    count = len(values)
+    if kind == "mean":
+        return float(values.mean())
+    if kind == "max":
+        return float(values[-1])
+    if kind == "min":
+        return float(values[0])
+    if kind == "volume":
+        return float(count * voxel_cc)
+    if kind == "vx":
+        return float((values >= parameter).mean() * 100)
+    if kind == "dx":
+        # Same estimator as the built-in D95 / D2 columns, so typing D95 in the
+        # metric box returns exactly the number the fixed column used to show.
+        return float(np.percentile(values, 100 - parameter))
+    if kind == "dxcc":
+        hottest = max(1, min(count, int(round(parameter / voxel_cc))))
+        return float(values[-hottest])
+    raise ValueError(f"未知指标类型 {kind}")
+
+
+def metric_notes(kind: str, parameter: float | None, values, voxel_cc: float) -> list[str]:
+    if kind != "dxcc":
+        return []
+    hottest = int(round(parameter / voxel_cc))
+    if hottest < 1:
+        return [f"{parameter:g} cc 小于单个体素体积 {voxel_cc:.4f} cc，已退化为最热体素剂量"]
+    if hottest >= len(values):
+        return [f"{parameter:g} cc 超过结构体积 {len(values) * voxel_cc:.2f} cc，结果等于 Dmin"]
+    return []
+
+
+def dvh_with_metrics():
+    if core.data_source() == "quick":
+        raise ValueError("快速查看未验证计划关联与结构完整性，不提供 DVH")
+    a = request.args
+    metrics = parse_metrics(a.get("metrics", ""))
+    v = core.volume(a["case"], a["series"])
+    dose, maximum = v.dose(a["dose"])
+    rois = [int(s) for s in a.get("rois", "").split(",") if s]
+    if not rois or len(rois) > 8:
+        raise ValueError("DVH 请选择 1 至 8 个结构")
+    thresholds = np.linspace(0, maximum, 201)
+    struct = v.record(a["struct"], "RTSTRUCT")
+    voxel_cc = float(np.prod(v.image.GetSpacing())) / 1000
+    result = []
+    for number in rois:
+        roi = next(x for x in struct["rois"] if x["number"] == number)
+        raw = dose[v.mask(a["struct"], number)]
+        count = len(raw)
+        row = {"roi": number, "name": roi["name"],
+               "volume_cc": float(count * np.prod(v.image.GetSpacing()) / 1000),
+               "coverage": float(np.isfinite(raw).mean()) if count else 0.0,
+               "values": {}, "notes": []}
+        if roi.get("clipped"):
+            row["error"] = "结构已裁剪到 CT 视野；仅显示剩余体积，不计算 DVH 指标"
+        elif count and np.isfinite(raw).all():
+            values = np.sort(raw)
+            row["mean"] = float(values.mean())
+            row["d95"] = float(np.percentile(values, 5))
+            row["d2"] = float(np.percentile(values, 98))
+            row["v20"] = float((values >= 20).mean() * 100)
+            row["curve"] = ((count - np.searchsorted(values, thresholds, side="left"))
+                            / count * 100).tolist()
+            for key, kind, parameter, _, _ in metrics:
+                row["values"][key] = evaluate_metric(kind, parameter, values, voxel_cc)
+                row["notes"].extend(metric_notes(kind, parameter, values, voxel_cc))
+        else:
+            row["error"] = "结构为空或部分位于剂量网格外，未计算指标"
+        result.append(row)
+    if a.get("format") == "csv":
+        stream = io.StringIO()
+        writer = csv.writer(stream)
+        writer.writerow(["ROI", "volume_cc", "coverage"]
+                        + [f"{label}_{unit}" for _, _, _, label, unit in metrics] + ["note"])
+        for row in result:
+            cells = [f"{row['values'][key]:.4f}" if key in row["values"] else ""
+                     for key, *_ in metrics]
+            writer.writerow([row["name"], f"{row['volume_cc']:.4f}", f"{row['coverage']:.4f}"]
+                            + cells + [row.get("error", "")])
+        return Response("\ufeff" + stream.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="dvh_metrics.csv"'})
+    return jsonify(doses=thresholds.tolist(), structures=result,
+                   metrics=[{"key": key, "label": label, "unit": unit}
+                            for key, _, _, label, unit in metrics],
+                   method="CT 网格结构栅格化；剂量线性插值；未覆盖结构不计算。研究预览，需与 TPS 核对。")
+
+
+core.app.view_functions["dvh"] = core.api(dvh_with_metrics)
 
 
 def new_home():
