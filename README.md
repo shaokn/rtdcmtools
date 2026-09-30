@@ -25,7 +25,7 @@ DICOM 导出
 | `convert_dicom_fractions_to_nifti.py` | 保留逐次层级，将分次 DICOM-RT 转换为 NIfTI。 |
 | `verify_nifti_conversion.py` | 独立读回转换结果，检查几何、数值、关系和校验和。 |
 | `server_new.py` | Viewer 的唯一入口，支持 DICOM、NIfTI、快速查看和临时病例库；`--host` 控制监听范围。 |
-| `run_viewer_new.sh` | Linux 下启动 Viewer；`RTDCMTOOLS_HOST` 指定绑定地址，也可直接改脚本内的 `PORT` / `HOST` 默认值。 |
+| `run_viewer_new_demo.sh` | Linux 下启动 Viewer；`RTDCMTOOLS_HOST` 指定绑定地址，也可直接改脚本内的 `PORT` / `HOST` 默认值。 |
 | `run_viewer_new_demo.bat` | Windows 启动示例；用户需填写本机 `python.exe` 路径。 |
 | `viewer/server.py` | Viewer 核心后端，以库的形式提供 `/api` 接口和静态资源，由 `server_new.py` 加载。 |
 
@@ -118,7 +118,7 @@ CT/FBCT 类型由文件名和直接父目录提示识别；RS、RP、RD、REG �
 默认以空病例库启动，DICOM 和 NIfTI 均不预加载任何目录：
 
 ```bash
-./run_viewer_new.sh 8768
+./run_viewer_new_demo.sh 8768
 ```
 
 打开：
@@ -140,7 +140,7 @@ Viewer 支持三切面、结构轮廓、剂量色洗、等剂量线、DVH 和 DI
 确实需要预加载时，可显式传入 DICOM 和 NIfTI 根目录：
 
 ```bash
-./run_viewer_new.sh 8768 /path/to/organized_dicom /path/to/nifti_fractions
+./run_viewer_new_demo.sh 8768 /path/to/organized_dicom /path/to/nifti_fractions
 ```
 
 路径不会作为默认值写在 Python 程序中；未传入的类型保持空列表。
@@ -167,7 +167,7 @@ New viewer (LAN):   http://192.168.1.50:7777/?source=dicom
 **临时用一次**：通过环境变量传入，脚本的位置参数不变：
 
 ```bash
-RTDCMTOOLS_HOST=0.0.0.0 ./run_viewer_new.sh 7777 /path/to/organized_dicom /path/to/nifti_fractions
+RTDCMTOOLS_HOST=0.0.0.0 ./run_viewer_new_demo.sh 7777 /path/to/organized_dicom /path/to/nifti_fractions
 ```
 
 **以后每次都这样**：改脚本自己的默认值，共两处（都在文件靠前位置）：
@@ -177,7 +177,7 @@ PORT="${1:-7777}"                     # 原为 "${1:-8768}"
 HOST="${RTDCMTOOLS_HOST:-0.0.0.0}"    # 原为 "${RTDCMTOOLS_HOST:-127.0.0.1}"
 ```
 
-改完 `./run_viewer_new.sh` 就是 `0.0.0.0:7777`。`${1:-7777}` 的意思是「有第 1 个参数就用它，没有才用 7777」，所以默认值改了之后命令行照样能临时覆盖——`./run_viewer_new.sh 8888` 仍走 8888，`RTDCMTOOLS_HOST=127.0.0.1 ./run_viewer_new.sh` 仍能切回本机。想彻底写死，把这两行换成 `PORT=7777` 和 `HOST=0.0.0.0`（代价是命令行传参失效，不推荐）。
+改完 `./run_viewer_new_demo.sh` 就是 `0.0.0.0:7777`。`${1:-7777}` 的意思是「有第 1 个参数就用它，没有才用 7777」，所以默认值改了之后命令行照样能临时覆盖——`./run_viewer_new_demo.sh 8888` 仍走 8888，`RTDCMTOOLS_HOST=127.0.0.1 ./run_viewer_new_demo.sh` 仍能切回本机。想彻底写死，把这两行换成 `PORT=7777` 和 `HOST=0.0.0.0`（代价是命令行传参失效，不推荐）。
 
 ⚠️ 改默认值等于**每次启动都开放局域网**，而 Viewer 没有登录；默认回环、需要时才显式指定，是有意为之。改之前请确认清楚这一点。
 
