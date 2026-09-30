@@ -24,8 +24,8 @@ DICOM 导出
 | `convert_dicom_to_nifti.py` | 将普通整理结果转换为 CT、结构 mask、剂量 NIfTI 和 JSON。 |
 | `convert_dicom_fractions_to_nifti.py` | 保留逐次层级，将分次 DICOM-RT 转换为 NIfTI。 |
 | `verify_nifti_conversion.py` | 独立读回转换结果，检查几何、数值、关系和校验和。 |
-| `server_new.py` | 本地只读 Viewer，支持 DICOM、NIfTI、快速查看和临时病例库。 |
-| `run_viewer_new.sh` | Linux 下启动新版 Viewer。 |
+| `server_new.py` | 本地只读 Viewer，支持 DICOM、NIfTI、快速查看和临时病例库；`--host` 控制监听范围。 |
+| `run_viewer_new.sh` | Linux 下启动新版 Viewer；`RTDCMTOOLS_HOST` 指定绑定地址。 |
 | `run_viewer_new_demo.bat` | Windows 启动示例；用户需填写本机 `python.exe` 路径。 |
 
 `viewer/` 保存 Viewer 后端与静态页面；`tests/` 中除两个跨数据源一致性用例需要本机病例数据外，其余使用合成 DICOM/NIfTI 数据测试（见「测试」一节）。
@@ -41,7 +41,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-Windows 将解释器替换为 `.venv\Scripts\python.exe`。Linux 启动脚本依次查找环境变量 `RTDCMTOOLS_PYTHON`、仓库内 `.venv` / `.pyauto`、当前 `aiwork/.pyauto`，最后回退到 `python3`。
+Windows 将解释器替换为 `.venv\Scripts\python.exe`。Linux 启动脚本依次查找环境变量 `RTDCMTOOLS_PYTHON`、仓库内 `.venv` / `.pyauto`、当前 `aiwork/.pyauto`，最后回退到 `python3`；另可用 `RTDCMTOOLS_HOST` 指定绑定地址（默认 `127.0.0.1`）。
 
 ## 快速开始
 
@@ -125,7 +125,7 @@ CT/FBCT 类型由文件名和直接父目录提示识别；RS、RP、RD、REG �
 - DICOM：<http://127.0.0.1:8768/?source=dicom>
 - NIfTI：<http://127.0.0.1:8768/?source=nifti>
 
-Viewer 支持三切面、结构轮廓、剂量色洗、等剂量线、DVH 和 DICOM 关系查看。它只监听 `127.0.0.1`，不会主动把数据发送到外网。
+Viewer 支持三切面、结构轮廓、剂量色洗、等剂量线、DVH 和 DICOM 关系查看。它默认只监听 `127.0.0.1`，不会主动把数据发送到外网。
 
 左侧 `+` 可选择文件夹：
 
@@ -143,6 +143,36 @@ Viewer 支持三切面、结构轮廓、剂量色洗、等剂量线、DVH 和 DI
 ```
 
 路径不会作为默认值写在 Python 程序中；未传入的类型保持空列表。
+
+### 局域网访问（可选）
+
+默认只监听本机回环地址。要让同一网络内的其他电脑打开，显式指定绑定地址：
+
+```bash
+python server_new.py --host 0.0.0.0 --port 7777
+```
+
+`0.0.0.0` 表示监听所有网卡，它本身**不是浏览地址**。启动时程序会打印真正可用的地址：
+
+```text
+New viewer (local): http://127.0.0.1:7777/?source=dicom
+New viewer (LAN):   http://192.168.1.50:7777/?source=dicom
+```
+
+其他电脑用其中的 LAN 地址打开。也可以只绑某一个网卡（`--host 192.168.1.50`），但网卡地址变化后要同步改命令，一般直接用 `0.0.0.0` 更省事。绑 `0.0.0.0` 不影响本机继续用 `127.0.0.1` 访问。
+
+用启动脚本时通过环境变量传入，脚本的位置参数不变：
+
+```bash
+RTDCMTOOLS_HOST=0.0.0.0 ./run_viewer_new.sh 7777 /path/to/organized_dicom /path/to/nifti_fractions
+```
+
+Windows 的 `run_viewer_new_demo.bat` 在最后一行命令后追加 `--host 0.0.0.0` 即可。
+
+两点必须注意：
+
+- **端口还要操作系统防火墙放行，本项目不修改防火墙配置。** 例如 ufw：`sudo ufw allow from <你的网段> to any port 7777 proto tcp`。放行前先确认两台机器在同一网段，别用 `ufw allow 7777` 这类不限来源的写法。
+- **Viewer 没有任何登录或权限控制。** 端口一旦对局域网开放，能连上的人就能读取所有已加载病例。只在可信网络内短时开启，用完即停。
 
 ### Windows 启动
 

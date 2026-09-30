@@ -12,6 +12,10 @@ set "PYTHON_EXE=C:\EDIT_THIS_PATH\python.exe"
 
 set "PORT=8768"
 
+rem To let other computers on the same network connect, append --host 0.0.0.0
+rem to the command at the bottom, then open http://<this machine's IP>:%PORT%/
+rem there. The firewall must allow the port, and the viewer has no login.
+
 if not exist "%PYTHON_EXE%" (
     echo Python was not found:
     echo   %PYTHON_EXE%

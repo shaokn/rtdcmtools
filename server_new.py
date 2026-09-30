@@ -7,6 +7,10 @@ session link; source data is never deleted.
 This module also overrides ``/api/dvh`` with an absolute-dose metric spec so
 research protocols can request their own indicators without editing the core
 viewer.
+
+The bind address defaults to ``127.0.0.1``. Pass ``--host 0.0.0.0`` to accept
+connections from other machines on the local network; the viewer has no
+authentication, so that stays opt-in.
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import socket
 import tempfile
 
 import sys
@@ -535,6 +540,75 @@ def configure(dicom_root: Path | None = None, nifti_root: Path | None = None,
     core.app.config["DEFAULT_SOURCE"] = default_source
 
 
+# Hosts that mean "listen on every interface". They are bind keywords only:
+# a browser cannot open http://0.0.0.0, so they are expanded into the machine's
+# own addresses before anything is printed.
+ANY_HOST = ("0.0.0.0", "::", "*")
+
+_NO_AUTH_WARNING = ("WARNING: this viewer has no authentication. Anyone who can "
+                    "reach this port can read every loaded case, so only expose "
+                    "it on a network you trust.")
+
+
+def is_loopback_host(host: str) -> bool:
+    """True when ``host`` keeps the server reachable from this machine only."""
+    host = (host or "").strip()
+    if host in ("", "localhost", "::1"):
+        return True
+    return host.startswith("127.")
+
+
+def lan_ipv4_addresses() -> list[str]:
+    """Best-effort list of this machine's non-loopback IPv4 addresses.
+
+    Uses the name resolver first and falls back to a UDP connect, which reports
+    the address the default route would use without sending any packet. Both
+    steps are advisory: a machine may legitimately have no LAN address.
+    """
+    found: list[str] = []
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM):
+            found.append(info[4][0])
+    except OSError:
+        pass
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("192.0.2.1", 9))  # TEST-NET-1, nothing is actually sent
+            found.append(probe.getsockname()[0])
+        finally:
+            probe.close()
+    except OSError:
+        pass
+    unique: list[str] = []
+    for address in found:
+        if address not in unique and not is_loopback_host(address) and address != "0.0.0.0":
+            unique.append(address)
+    return unique
+
+
+def startup_lines(host: str, port: int, source: str) -> list[str]:
+    """Banner lines describing where the viewer can actually be opened."""
+    suffix = f"/?source={source}"
+    if is_loopback_host(host):
+        return [f"New viewer: http://127.0.0.1:{port}{suffix}"]
+    if host in ANY_HOST:
+        # Every interface is served, loopback included, so advertise both.
+        lines = [f"New viewer (local): http://127.0.0.1:{port}{suffix}"]
+        addresses = lan_ipv4_addresses()
+        if addresses:
+            lines += [f"New viewer (LAN):   http://{address}:{port}{suffix}"
+                      for address in addresses]
+        else:
+            lines.append(f"New viewer (LAN):   http://<this machine's IP>:{port}{suffix}")
+    else:
+        # One specific interface: that address is the only one that answers.
+        lines = [f"New viewer (LAN):   http://{host}:{port}{suffix}"]
+    lines.append(_NO_AUTH_WARNING)
+    return lines
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path,
@@ -543,11 +617,16 @@ def main():
                         help="Optional converted NIfTI root to preload")
     parser.add_argument("--default-source", choices=("dicom", "nifti"), default="dicom")
     parser.add_argument("--port", type=int, default=8768)
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Bind address. The default serves this machine only; "
+                             "use 0.0.0.0 to accept connections from the local network "
+                             "(no authentication, and the firewall must allow the port).")
     args = parser.parse_args()
     configure(args.data_root, args.nifti_root, args.default_source)
-    print(f"New viewer: http://127.0.0.1:{args.port}/?source={args.default_source}", flush=True)
+    for line in startup_lines(args.host, args.port, args.default_source):
+        print(line, flush=True)
     print(f"Temporary session: {SESSION}", flush=True)
-    core.app.run(host="127.0.0.1", port=args.port, threaded=True, debug=False)
+    core.app.run(host=args.host, port=args.port, threaded=True, debug=False)
 
 
 if __name__ == "__main__":
