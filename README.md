@@ -24,11 +24,12 @@ DICOM 导出
 | `convert_dicom_to_nifti.py` | 将普通整理结果转换为 CT、结构 mask、剂量 NIfTI 和 JSON。 |
 | `convert_dicom_fractions_to_nifti.py` | 保留逐次层级，将分次 DICOM-RT 转换为 NIfTI。 |
 | `verify_nifti_conversion.py` | 独立读回转换结果，检查几何、数值、关系和校验和。 |
-| `server_new.py` | 本地只读 Viewer，支持 DICOM、NIfTI、快速查看和临时病例库；`--host` 控制监听范围。 |
-| `run_viewer_new.sh` | Linux 下启动新版 Viewer；`RTDCMTOOLS_HOST` 指定绑定地址。 |
+| `server_new.py` | Viewer 的唯一入口，支持 DICOM、NIfTI、快速查看和临时病例库；`--host` 控制监听范围。 |
+| `run_viewer_new.sh` | Linux 下启动 Viewer；`RTDCMTOOLS_HOST` 指定绑定地址。 |
 | `run_viewer_new_demo.bat` | Windows 启动示例；用户需填写本机 `python.exe` 路径。 |
+| `viewer/server.py` | Viewer 核心后端，以库的形式提供 `/api` 接口和静态资源，由 `server_new.py` 加载。 |
 
-`viewer/` 保存 Viewer 后端与静态页面；`tests/` 中除两个跨数据源一致性用例需要本机病例数据外，其余使用合成 DICOM/NIfTI 数据测试（见「测试」一节）。
+`viewer/server.py` 不单独运行，也不自带页面：它只提供接口，页面和 DVH 指标解析都在 `server_new.py` 一侧。`tests/` 中除两个跨数据源一致性用例需要本机病例数据外，其余使用合成 DICOM/NIfTI 数据测试（见「测试」一节）。
 
 ## 安装
 
@@ -209,7 +210,7 @@ DVH 页签的「自定义指标」输入框接受绝对剂量型指标，用逗�
 - `D_xcc` 是「最热 x cc 体积内的**最低**剂量」。当 x cc 小于单个体素时退化为最热体素剂量；当 x cc 超过结构体积时结果等于 `Dmin`。两种情况都会在该行给出提示。
 - `V_x%` 是另一种量：「接受 ≥ x% 处方剂量的体积」，需要处方剂量。本工具不携带处方剂量、也不打算支持这类指标，因此这种写法返回 400 并说明原因，**不会**回退成按最大剂量解释；请改用绝对剂量阈值，如 `V20Gy`。
 
-该功能由 `server_new.py` 覆盖核心 `/api/dvh` 实现，`viewer/server.py` 与旧版 `run_viewer.sh` 的固定四列保持不变。
+该功能由 `server_new.py` 覆盖核心的 `/api/dvh` 视图函数实现，核心后端 `viewer/server.py` 自身不需要为新增指标改动。
 
 ## NIfTI 输出约定
 

@@ -526,7 +526,11 @@ def new_home():
     return send_from_directory(VIEWER / "static", "index_new.html")
 
 
-core.app.view_functions["home"] = new_home
+# The core backend has no page of its own, so this adds the route rather than
+# replacing a view function. ``view_functions["home"] = new_home`` would be
+# silently useless here: with no rule named ``home`` there is nothing to swap
+# and ``/`` would stay a 404.
+core.app.add_url_rule("/", "home", new_home)
 
 
 def configure(dicom_root: Path | None = None, nifti_root: Path | None = None,

@@ -1,5 +1,10 @@
-"""Local, read-only DICOM-RT research viewer. Run with pyauto Python."""
-import argparse
+"""Core read-only DICOM-RT backend: the /api routes and static assets.
+
+This module is a library. ``server_new.py`` owns the command line entry point,
+the page and the DVH metric spec, and is the supported way to start the viewer.
+It replaces the ``dvh`` view function and registers the ``home`` route on top of
+this app, so import this module rather than running it.
+"""
 from collections import OrderedDict
 import csv
 from functools import wraps
@@ -280,11 +285,6 @@ def private(response):
     return response
 
 
-@app.get('/')
-def home():
-    return send_from_directory(HERE / 'static', 'index.html')
-
-
 @app.get('/api/cases')
 @api
 def cases():
@@ -490,14 +490,3 @@ def dvh():
                         headers={'Content-Disposition': 'attachment; filename="dvh_metrics.csv"'})
     return jsonify(doses=thresholds.tolist(), structures=result,
                    method='CT 网格结构栅格化；剂量线性插值；未覆盖结构不计算。研究预览，需与 TPS 核对。')
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data-root', type=Path, default=ROOT)
-    parser.add_argument('--nifti-root', type=Path, default=NIFTI_ROOT)
-    parser.add_argument('--port', type=int, default=8765)
-    args = parser.parse_args()
-    ROOT = args.data_root.resolve()
-    NIFTI_ROOT = args.nifti_root.resolve()
-    app.run(host='127.0.0.1', port=args.port, threaded=True, debug=False)
