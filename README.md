@@ -168,7 +168,14 @@ New viewer (LAN):   http://192.168.1.50:7777/?source=dicom
 RTDCMTOOLS_HOST=0.0.0.0 ./run_viewer_new.sh 7777 /path/to/organized_dicom /path/to/nifti_fractions
 ```
 
-Windows 的 `run_viewer_new_demo.bat` 在最后一行命令后追加 `--host 0.0.0.0` 即可。
+Windows 的 `run_viewer_new_demo.bat` 不解析命令行参数，端口和绑定地址都在文件里改，共两处：把顶部的 `PORT` 改成目标端口，再给启动命令加上 `--host 0.0.0.0`。
+
+```bat
+set "PORT=7777"
+"%PYTHON_EXE%" -u "%~dp0server_new.py" --host 0.0.0.0 --port %PORT% --default-source dicom
+```
+
+⚠️ 第二处要改的是**以 `"%PYTHON_EXE%"` 开头的那条启动命令**——它后面还有 `echo` / `pause` / `endlocal` 等几行，别把参数加到文件最末尾。
 
 两点必须注意：
 
@@ -190,6 +197,8 @@ run_viewer_new_demo.bat
 ```
 
 BAT 使用自身所在目录定位 `server_new.py`，因此不要求仓库位于固定盘符或固定文件夹。
+
+端口由文件顶部的 `PORT` 决定，绑定地址由启动命令上的 `--host` 决定，两者都直接在文件里改；要开放局域网访问，见上一节「局域网访问（可选）」。
 
 ### 自定义 DVH 指标
 
