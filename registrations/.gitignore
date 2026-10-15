@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pyauto/
+.pytest_cache/
+data/
+output/
+temp/
+*.nii
+*.nii.gz
+*.dcm
+*.mha
+*.h5
+*.pt

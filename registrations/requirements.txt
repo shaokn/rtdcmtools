@@ -1,0 +1,4 @@
+numpy
+SimpleITK
+pydicom
+airlab @ git+https://github.com/airlab-unibas/airlab.git@1a715766e17c812803624d95196092291fa2241d

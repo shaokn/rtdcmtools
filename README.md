@@ -24,6 +24,7 @@ DICOM 导出
 | `convert_dicom_to_nifti.py` | 将普通整理结果转换为 CT、结构 mask、剂量 NIfTI 和 JSON。 |
 | `convert_dicom_fractions_to_nifti.py` | 保留逐次层级，将分次 DICOM-RT 转换为 NIfTI。 |
 | `verify_nifti_conversion.py` | 独立读回转换结果，检查几何、数值、关系和校验和。 |
+| [`registrations/`](registrations/README.md) | 单向／双向 B-spline 配准、结构传播及可选剂量映射；依赖单独安装。 |
 | `server_new.py` | Viewer 的唯一入口，支持 DICOM、NIfTI、快速查看和临时病例库；`--host` 控制监听范围。 |
 | `run_viewer_new_demo.sh` | Linux 下启动 Viewer；`RTDCMTOOLS_HOST` 指定绑定地址，也可直接改脚本内的 `PORT` / `HOST` 默认值。 |
 | `run_viewer_new_demo.bat` | Windows 启动示例；用户需填写本机 `python.exe` 路径。 |
